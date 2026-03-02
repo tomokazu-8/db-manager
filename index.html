@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DBカセット マネージャー</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ===== SIDEBAR ===== -->
+<div id="sidebar">
+  <div class="sidebar-header">
+    <div class="app-title">DBカセット<br>マネージャー</div>
+    <button class="btn btn-primary btn-block" onclick="showCreateModal()">＋ 新規DB作成</button>
+  </div>
+
+  <div class="sidebar-section-label">DBカセット一覧</div>
+  <div id="dbList"></div>
+
+  <div class="sidebar-footer">
+    <button class="btn btn-outline btn-sm btn-block" onclick="importExcelAsNewDb()">
+      📥 ExcelからDB作成
+    </button>
+    <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none" onchange="handleImportFile(event)">
+  </div>
+</div>
+
+<!-- ===== MAIN ===== -->
+<div id="main">
+
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <div id="toolbarLeft">
+      <span id="currentDbName" style="font-weight:700;font-size:15px;color:var(--text-main);">DBを選択してください</span>
+      <span id="rowCount" style="font-size:12px;color:var(--text-sub);margin-left:8px;"></span>
+    </div>
+    <div id="toolbarRight">
+      <select id="catFilter" onchange="applyFilter()" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;">
+        <option value="">全カテゴリ</option>
+        <option value="cable">電線・ケーブル</option>
+        <option value="conduit">電線管</option>
+        <option value="device">配線器具</option>
+        <option value="box">ボックス</option>
+        <option value="panel">分電盤</option>
+        <option value="fixture">照明器具</option>
+        <option value="dimmer">調光器</option>
+        <option value="fire">火災報知器</option>
+        <option value="ground">接地</option>
+        <option value="accessories">付属品</option>
+      </select>
+      <input id="searchInput" type="text" placeholder="品名・規格で絞込..." oninput="applyFilter()"
+        style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;width:180px;">
+      <button class="btn btn-outline btn-sm" onclick="addRow()">＋ 行追加</button>
+      <button class="btn btn-primary btn-sm" onclick="exportCurrentDb()" id="btnExport" disabled>
+        📤 Excelエクスポート
+      </button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div id="tableWrap">
+    <div id="emptyState">
+      <div style="font-size:40px;margin-bottom:12px;">📦</div>
+      <div style="font-size:16px;font-weight:700;color:var(--text-main);margin-bottom:6px;">DBカセットを選択してください</div>
+      <div style="font-size:13px;color:var(--text-sub);">左のサイドバーから既存のDBを選択するか、新規DBを作成してください。</div>
+    </div>
+    <table id="mainTable" style="display:none;">
+      <thead>
+        <tr>
+          <th style="width:36px;"></th>
+          <th style="width:240px;">品目名称</th>
+          <th style="width:220px;">規格名称</th>
+          <th style="width:52px;">単位</th>
+          <th style="width:100px;">基準単価</th>
+          <th style="width:100px;">原価単価</th>
+          <th style="width:60px;">原価率%</th>
+          <th style="width:70px;">歩掛1</th>
+          <th style="width:110px;">カテゴリ</th>
+          <th style="width:36px;"></th>
+        </tr>
+      </thead>
+      <tbody id="tableBody"></tbody>
+    </table>
+  </div>
+
+  <!-- Status bar -->
+  <div id="statusBar">
+    <span id="statusMsg"></span>
+    <span id="unsavedBadge" style="display:none;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">未保存の変更あり</span>
+  </div>
+</div>
+
+<!-- ===== CREATE MODAL ===== -->
+<div id="createModal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="width:360px;">
+    <div class="modal-title">新規DBカセット作成</div>
+    <label class="field-label">DB名称</label>
+    <input id="newDbName" type="text" class="field-input" placeholder="例: 新築木造用DB" maxlength="40">
+    <label class="field-label" style="margin-top:10px;">メモ（任意）</label>
+    <input id="newDbMemo" type="text" class="field-input" placeholder="工種・用途など">
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeCreateModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="confirmCreateDb()">作成</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== RENAME MODAL ===== -->
+<div id="renameModal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="width:360px;">
+    <div class="modal-title">DB名称を変更</div>
+    <label class="field-label">DB名称</label>
+    <input id="renameDbName" type="text" class="field-input" maxlength="40">
+    <label class="field-label" style="margin-top:10px;">メモ（任意）</label>
+    <input id="renameDbMemo" type="text" class="field-input">
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeRenameModal()">キャンセル</button>
+      <button class="btn btn-primary" onclick="confirmRenameDb()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DELETE CONFIRM MODAL ===== -->
+<div id="deleteModal" class="modal-overlay" style="display:none;">
+  <div class="modal-box" style="width:360px;">
+    <div class="modal-title" style="color:#dc2626;">DBを削除しますか？</div>
+    <p id="deleteModalMsg" style="font-size:13px;color:var(--text-sub);margin:0 0 16px;"></p>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeDeleteModal()">キャンセル</button>
+      <button class="btn" style="background:#dc2626;color:#fff;" onclick="confirmDeleteDb()">削除</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== TOAST ===== -->
+<div id="toast"></div>
+
+<script src="js/data.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.18.5/package/dist/xlsx.full.min.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
