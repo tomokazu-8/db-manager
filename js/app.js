@@ -102,7 +102,7 @@ function renderTable() {
       <td><input class="cell-input" value="${esc(row.u)}" placeholder="本" style="width:44px;"
         onchange="onCellChange('${row.id}', 'u', this.value)"></td>
       <td><input class="cell-input num" type="number" step="1" min="0" value="${row.ep !== '' ? row.ep : ''}" placeholder="0"
-        onchange="onPriceChange('${row.id}', 'ep', this.value)"></td>
+        onchange="onPriceChange('${row.id}', this.value)"></td>
       <td><input class="cell-input num" type="number" step="1" min="0" value="${row.cp !== '' ? row.cp : ''}" placeholder="0"
         onchange="onCellChange('${row.id}', 'cp', this.value)"></td>
       <td><input class="cell-input num" type="number" step="1" min="0" max="100" value="${row.r !== '' ? Math.round(row.r * 100) : ''}" placeholder="75"
@@ -135,7 +135,7 @@ function onCellChange(id, field, value) {
 }
 
 // 売単価変更→原価率から原価を自動計算
-function onPriceChange(id, field, value) {
+function onPriceChange(id, value) {
   const row = currentRows.find(r => r.id === id);
   if (!row) return;
   const ep = parseFloat(value) || 0;
@@ -402,16 +402,29 @@ function handleImportFile(event) {
   event.target.value = '';
   if (!file || !window.XLSX) return;
 
+  const isCsv = /\.csv$/i.test(file.name);
+
   const reader = new FileReader();
   reader.onload = function(e) {
     try {
-      const wb = XLSX.read(e.target.result, { type: 'array' });
+      let data;
+      if (isCsv) {
+        // CSV読み込み（SheetJSでパース）
+        const wb = XLSX.read(e.target.result, { type: 'string', codepage: 65001 });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        data = XLSX.utils.sheet_to_json(ws);
+      } else {
+        // Excel読み込み：「資材マスタ」シートを優先、なければ最初のシート
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const sheetName = wb.SheetNames.includes('資材マスタ') ? '資材マスタ' : wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        data = XLSX.utils.sheet_to_json(ws);
+      }
 
-      // 資材マスタシートを読む
-      const ws = wb.Sheets['資材マスタ'];
-      if (!ws) { alert('「資材マスタ」シートが見つかりません'); return; }
-      const data = XLSX.utils.sheet_to_json(ws);
-      if (data.length === 0) { alert('「資材マスタ」シートにデータがありません'); return; }
+      if (!data || data.length === 0) {
+        alert('データが見つかりませんでした。ファイルの内容を確認してください。');
+        return;
+      }
 
       // 列名確認（デバッグ）
       console.log('[Import] 列名:', Object.keys(data[0]));
@@ -431,7 +444,7 @@ function handleImportFile(event) {
         const chuName = String(getCol(row, '中分類名','分類名','分類') || '').trim();
         const catRaw  = String(getCol(row, 'カテゴリ') || '').trim();
 
-        // カテゴリはExcel記載があればそれを優先、なければ自動判定
+        // カテゴリはExcel/CSV記載があればそれを優先、なければ自動判定
         let cat = catRaw && CATEGORIES.some(c => c.id === catRaw) ? catRaw
                 : detectCategory(hinmei, kikaku, chuName);
 
@@ -449,7 +462,7 @@ function handleImportFile(event) {
       }
 
       // DB名はファイル名から
-      const dbName = file.name.replace(/\.xlsx?$/i, '');
+      const dbName = file.name.replace(/\.(xlsx?|csv)$/i, '');
       const id = genId();
       const db = { id, name: dbName, memo: `Excelインポート (${rows.length}品目)`, rowCount: rows.length, updatedAt: new Date().toISOString() };
       dbList.push(db);
