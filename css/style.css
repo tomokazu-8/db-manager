@@ -389,6 +389,123 @@ select.cell-select:hover { border-color: var(--border); }
   margin-top: 20px;
 }
 
+/* ===== TAB BAR ===== */
+#tabBar {
+  display: flex;
+  gap: 0;
+  background: var(--surface);
+  border-bottom: 2px solid var(--border);
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-sub);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text-main); }
+.tab-btn.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+/* ===== TAB CONTENT ===== */
+.tab-content {
+  display: none;
+  flex: 1;
+  overflow: auto;
+}
+.tab-content.active { display: flex; flex-direction: column; }
+
+/* ===== MASTER PANEL (工種・キーワード) ===== */
+.master-panel {
+  padding: 16px;
+  flex: 1;
+  overflow: auto;
+}
+
+.master-toolbar {
+  margin-bottom: 12px;
+}
+
+.master-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.master-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface);
+}
+
+.master-table th {
+  padding: 8px 8px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-sub);
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+
+.master-table td {
+  padding: 3px 4px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.master-table tr:hover td { background: #f8fafc; }
+
+.master-empty {
+  text-align: center;
+  padding: 40px 16px;
+  color: var(--text-sub);
+  font-size: 13px;
+}
+
+/* ===== SETTINGS PANEL ===== */
+.settings-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.settings-label {
+  flex: 0 0 200px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.settings-input {
+  flex: 1;
+  max-width: 200px;
+  padding: 6px 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text-main);
+}
+.settings-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
 /* ===== TOAST ===== */
 #toast {
   position: fixed;

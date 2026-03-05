@@ -1,6 +1,7 @@
 // ===== CONSTANTS =====
 
-const CATEGORIES = [
+// デフォルトカテゴリ（工種マスタ未設定時のフォールバック）
+const DEFAULT_CATEGORIES = [
   { id: 'cable',       label: '電線・ケーブル' },
   { id: 'conduit',     label: '電線管' },
   { id: 'device',      label: '配線器具' },
@@ -13,7 +14,14 @@ const CATEGORIES = [
   { id: 'accessories', label: '付属品' },
 ];
 
-const CAT_MAP = Object.fromEntries(CATEGORIES.map(c => [c.id, c.label]));
+// 現在有効なカテゴリ（工種マスタから動的に更新される）
+let CATEGORIES = [...DEFAULT_CATEGORIES];
+
+let CAT_MAP = Object.fromEntries(CATEGORIES.map(c => [c.id, c.label]));
+
+function rebuildCatMap() {
+  CAT_MAP = Object.fromEntries(CATEGORIES.map(c => [c.id, c.label]));
+}
 
 // Excel列ヘッダー（estimate-app互換）
 const EXCEL_HEADERS = ['品目名称','規格名称','単位','基準単価','原価単価','原価率','歩掛1','中分類名','カテゴリ'];
@@ -34,8 +42,11 @@ function fmtNum(n) {
 }
 
 // ===== LOCAL STORAGE KEYS =====
-const LS_LIST = 'dbm_db_list';   // DB一覧メタ情報の配列
-const LS_DATA = 'dbm_db_data_';  // DB品目データ（IDごと）
+const LS_LIST = 'dbm_db_list';       // トリッジ一覧メタ情報の配列
+const LS_DATA = 'dbm_db_data_';      // トリッジ品目データ（IDごと）
+const LS_KOSHU = 'dbm_db_koshu_';    // 工種マスタ（IDごと）
+const LS_SETTINGS = 'dbm_db_settings_'; // 設定マスタ（IDごと）
+const LS_KEYWORDS = 'dbm_db_keywords_'; // キーワードマスタ（IDごと）
 
 // ===== DB LIST (metadata) =====
 function loadDbList() {
@@ -63,6 +74,55 @@ function saveDbData(id, rows) {
 
 function deleteDbData(id) {
   localStorage.removeItem(LS_DATA + id);
+  localStorage.removeItem(LS_KOSHU + id);
+  localStorage.removeItem(LS_SETTINGS + id);
+  localStorage.removeItem(LS_KEYWORDS + id);
+}
+
+// ===== 工種マスタ =====
+function loadKoshuData(id) {
+  try {
+    const s = localStorage.getItem(LS_KOSHU + id);
+    return s ? JSON.parse(s) : [];
+  } catch { return []; }
+}
+
+function saveKoshuData(id, rows) {
+  localStorage.setItem(LS_KOSHU + id, JSON.stringify(rows));
+}
+
+// ===== 設定マスタ =====
+function loadSettingsData(id) {
+  try {
+    const s = localStorage.getItem(LS_SETTINGS + id);
+    return s ? JSON.parse(s) : null;
+  } catch { return null; }
+}
+
+function saveSettingsData(id, settings) {
+  localStorage.setItem(LS_SETTINGS + id, JSON.stringify(settings));
+}
+
+function defaultSettings() {
+  return {
+    copperEnabled: false,
+    copperBase: 1000,
+    copperFraction: 0.50,
+    laborSell: 33000,
+    laborCost: 12000,
+  };
+}
+
+// ===== キーワードマスタ =====
+function loadKeywordsData(id) {
+  try {
+    const s = localStorage.getItem(LS_KEYWORDS + id);
+    return s ? JSON.parse(s) : [];
+  } catch { return []; }
+}
+
+function saveKeywordsData(id, rows) {
+  localStorage.setItem(LS_KEYWORDS + id, JSON.stringify(rows));
 }
 
 // ===== GENERATE ID =====
@@ -103,5 +163,29 @@ function newRow() {
     r: '',     // 原価率
     b: '',     // 歩掛1
     c: 'fixture', // カテゴリ
+  };
+}
+
+// ===== 工種マスタ行 =====
+function newKoshuRow(order) {
+  return {
+    id: '',         // 工種ID
+    name: '',       // 工種名
+    short: '',      // 略称
+    rateMode: false,// 割合モード
+    miscRate: 5,    // 雑材料率%
+    order: order || 1,  // 順序
+    autoRows: '',   // 自動計算行（パイプ区切り: 雑材料消耗品|電工労務費|運搬費）
+  };
+}
+
+// ===== キーワードマスタ行 =====
+function newKeywordRow() {
+  return {
+    keyword: '',         // キーワード
+    laborType: 'fixture',// 分類
+    bukariki: 0,         // 歩掛
+    copperLinked: false,  // 銅連動
+    ceilingOpening: false,// 天井開口
   };
 }
