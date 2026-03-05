@@ -961,14 +961,15 @@ async function handleZipImport(file) {
     const sheets = {};
     const entries = Object.entries(zip.files).filter(([, e]) => !e.dir && /\.csv$/i.test(e.name));
     for (const [path, entry] of entries) {
-      const text = await entry.async('text');
+      const raw = await entry.async('text');
+      const text = raw.replace(/^\uFEFF/, ''); // BOM除去
       const sheetName = path.replace(/.*\//, '').replace(/\.csv$/i, ''); // パスとextを除去
       const wb = XLSX.read(text, { type: 'string', codepage: 65001 });
       sheets[sheetName] = wb.Sheets[wb.SheetNames[0]];
     }
 
     if (!sheets['資材マスタ']) {
-      alert('ZIPに「資材マスタ.csv」が見つかりません。\n含まれているファイル: ' + Object.keys(sheets).join(', '));
+      alert('ZIPに「資材マスタ.csv」が見つかりません。\n含まれているファイル: ' + Object.keys(sheets).join(', ') + '\n\nファイル名が正確に「資材マスタ.csv」である必要があります。');
       return;
     }
 
