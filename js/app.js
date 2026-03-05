@@ -761,6 +761,11 @@ function handleImportFile(event) {
   event.target.value = '';
   if (!file || !window.XLSX) return;
 
+  if (/\.zip$/i.test(file.name)) {
+    handleZipImport(file);
+    return;
+  }
+
   const isCsv = /\.csv$/i.test(file.name);
 
   const reader = new FileReader();
@@ -941,6 +946,163 @@ function handleImportFile(event) {
     reader.readAsText(file);
   } else {
     reader.readAsArrayBuffer(file);
+  }
+}
+
+// ===== ZIP IMPORT =====
+async function handleZipImport(file) {
+  if (!window.JSZip) { alert('JSZipが読み込まれていません。ページを再読み込みしてください。'); return; }
+
+  try {
+    showToast('ZIPを読み込み中...');
+    const zip = await JSZip.loadAsync(file.arrayBuffer());
+
+    // ZIPの各CSVをシート名→WorksheetObjectに変換
+    const sheets = {};
+    const entries = Object.entries(zip.files).filter(([, e]) => !e.dir && /\.csv$/i.test(e.name));
+    for (const [path, entry] of entries) {
+      const text = await entry.async('text');
+      const sheetName = path.replace(/.*\//, '').replace(/\.csv$/i, ''); // パスとextを除去
+      const wb = XLSX.read(text, { type: 'string', codepage: 65001 });
+      sheets[sheetName] = wb.Sheets[wb.SheetNames[0]];
+    }
+
+    if (!sheets['資材マスタ']) {
+      alert('ZIPに「資材マスタ.csv」が見つかりません。\n含まれているファイル: ' + Object.keys(sheets).join(', '));
+      return;
+    }
+
+    // === 資材マスタ ===
+    const data1 = XLSX.utils.sheet_to_json(sheets['資材マスタ']);
+    const rows = [];
+    let skipped = 0;
+    for (const row of data1) {
+      const hinmei  = String(getCol(row, '品目名称','品名','名称','材料名','品目') || '').trim();
+      if (!hinmei) { skipped++; continue; }
+      const kikaku  = String(getCol(row, '規格名称','規格','仕様','型番','規格・型番') || '').trim();
+      const unit    = String(getCol(row, '単位') || '').trim();
+      const ep      = parseFloat(getCol(row, '基準単価','単価','見積単価','仕切単価','定価') || 0);
+      const cp      = parseFloat(getCol(row, '原価単価','原価') || 0);
+      const rRaw    = parseFloat(getCol(row, '原価率') || 0);
+      const r       = rRaw > 1 ? rRaw / 100 : rRaw;
+      const buk     = parseFloat(getCol(row, '歩掛1','歩掛','人工') || 0);
+      const chuName = String(getCol(row, '中分類名','分類名','分類') || '').trim();
+      const catRaw  = String(getCol(row, 'カテゴリ') || '').trim();
+      const daiId   = String(getCol(row, '大分類ID') || '').trim();
+      const chuId   = String(getCol(row, '中分類ID') || '').trim();
+      const shoId   = String(getCol(row, '小分類ID') || '').trim();
+      const shoName = String(getCol(row, '小分類名') || '').trim();
+      rows.push({
+        id: genId(), n: hinmei, s: kikaku, u: unit,
+        ep: ep||'', cp: cp||'', r: r||'', b: buk||'',
+        c: catRaw || detectCategory(hinmei, kikaku, chuName),
+        daiId, chuId, shoId, shoName,
+      });
+    }
+
+    // === 工種マスタ ===
+    let importedKoshu = [];
+    if (sheets['工種マスタ']) {
+      const yn = v => ['true','1','yes','割合','はい','○'].includes(String(v||'').trim());
+      importedKoshu = XLSX.utils.sheet_to_json(sheets['工種マスタ']).map(r => ({
+        id:       String(getCol(r,'工種ID')||'').trim(),
+        name:     String(getCol(r,'工種名')||'').trim(),
+        short:    String(getCol(r,'略称')||'').trim(),
+        rateMode: yn(getCol(r,'割合モード')),
+        miscRate: parseFloat(getCol(r,'雑材料率%','雑材料率')||0),
+        order:    parseInt(getCol(r,'順序')||0),
+        autoRows: String(getCol(r,'自動計算行')||'').trim(),
+      })).filter(k => k.id && k.name);
+    }
+
+    // === 設定マスタ ===
+    let importedSettings = defaultSettings();
+    if (sheets['設定マスタ']) {
+      const map = {};
+      XLSX.utils.sheet_to_json(sheets['設定マスタ']).forEach(r => {
+        const key = String(getCol(r,'パラメーター名','パラメータ','設定名')||'').trim();
+        const val = getCol(r,'値','value');
+        if (key) map[key] = val;
+      });
+      const yn = v => ['true','1','yes','有効','○','はい'].includes(String(v||'').trim());
+      if (map['銅建値補正']           !== undefined) importedSettings.copperEnabled  = yn(map['銅建値補正']);
+      if (map['銅建値基準（円/kg）']  !== undefined) importedSettings.copperBase     = parseFloat(map['銅建値基準（円/kg）'])||1000;
+      if (map['銅連動率']             !== undefined) importedSettings.copperFraction = parseFloat(map['銅連動率'])||0.50;
+      if (map['労務売単価（円/人工）'] !== undefined) importedSettings.laborSell     = parseFloat(map['労務売単価（円/人工）'])||33000;
+      if (map['労務原価単価（円/人工）']!== undefined) importedSettings.laborCost   = parseFloat(map['労務原価単価（円/人工）'])||12000;
+    }
+
+    // === キーワードマスタ（v2/v3自動判定）===
+    let importedKeywords = [];
+    let importedBunruiKeywords = [];
+    if (sheets['キーワードマスタ']) {
+      const dataKw = XLSX.utils.sheet_to_json(sheets['キーワードマスタ']);
+      const yn = v => ['true','1','yes','○','はい'].includes(String(v||'').trim());
+      const isV3 = dataKw.length > 0 && getCol(dataKw[0],'キーワードID') !== undefined;
+      if (isV3) {
+        importedBunruiKeywords = dataKw.map(r => ({
+          kwId: String(getCol(r,'キーワードID')||'').trim(),
+          keyword: String(getCol(r,'キーワード')||'').trim(),
+          type:    String(getCol(r,'種別')||'').trim(),
+          daiId:   String(getCol(r,'大分類ID')||'').trim(),
+          daiName: String(getCol(r,'大分類名')||'').trim(),
+          chuId:   String(getCol(r,'中分類ID')||'').trim(),
+          chuName: String(getCol(r,'中分類名')||'').trim(),
+          shoId:   String(getCol(r,'小分類ID')||'').trim(),
+        })).filter(k => k.keyword);
+      } else {
+        importedKeywords = dataKw.map(r => ({
+          keyword:        String(getCol(r,'キーワード')||'').trim(),
+          laborType:      String(getCol(r,'分類','労務分類')||'fixture').trim(),
+          bukariki:       parseFloat(getCol(r,'歩掛','歩掛値')||0),
+          copperLinked:   yn(getCol(r,'銅連動','銅連動フラグ')),
+          ceilingOpening: yn(getCol(r,'天井開口','天井開口フラグ')),
+        })).filter(k => k.keyword);
+      }
+    }
+
+    // === 分類マスタ ===
+    let importedBunrui = { rows: [], keywords: importedBunruiKeywords };
+    if (sheets['分類マスタ']) {
+      importedBunrui.rows = XLSX.utils.sheet_to_json(sheets['分類マスタ']).map(r => ({
+        daiId:   String(getCol(r,'大分類ID')||'').trim(),
+        daiName: String(getCol(r,'大分類名')||'').trim(),
+        chuId:   String(getCol(r,'中分類ID')||'').trim(),
+        chuName: String(getCol(r,'中分類名')||'').trim(),
+        shoId:   String(getCol(r,'小分類ID')||'').trim(),
+        shoName: String(getCol(r,'小分類名')||'').trim(),
+        count:   parseInt(getCol(r,'品目数')||0),
+      })).filter(r => r.shoId);
+    }
+
+    if (rows.length === 0) {
+      alert('資材マスタに取り込める品目がありませんでした。');
+      return;
+    }
+
+    // === トリッジとして保存 ===
+    const dbName = file.name.replace(/\.zip$/i, '');
+    const id = genId();
+    const db = { id, name: dbName, memo: `ZIPインポート (${rows.length}品目)`, rowCount: rows.length, updatedAt: new Date().toISOString() };
+    dbList.push(db);
+    saveDbList(dbList);
+    saveDbData(id, rows);
+    saveKoshuData(id, importedKoshu);
+    saveSettingsData(id, importedSettings);
+    saveKeywordsData(id, importedKeywords);
+    saveBunruiData(id, importedBunrui);
+
+    selectDb(id);
+
+    const parts = [`${rows.length}品目`];
+    if (importedKoshu.length > 0)      parts.push(`${importedKoshu.length}工種`);
+    if (importedKeywords.length > 0)   parts.push(`${importedKeywords.length}キーワード`);
+    if (importedBunrui.rows.length > 0) parts.push(`分類${importedBunrui.rows.length}件`);
+    showToast(`「${dbName}」をZIPから作成しました（${parts.join(' / ')}、${skipped}件スキップ）`);
+
+  } catch(err) {
+    alert('ZIPインポートエラー: ' + err.message);
+    console.error(err);
   }
 }
 

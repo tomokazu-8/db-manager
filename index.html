@@ -20,9 +20,9 @@
 
   <div class="sidebar-footer">
     <button class="btn btn-outline btn-sm btn-block" onclick="importExcelAsNewDb()">
-      📥 Excel / CSVからトリッジ作成
+      📥 Excel / CSV / ZIPからトリッジ作成
     </button>
-    <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleImportFile(event)">
+    <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv,.zip" style="display:none" onchange="handleImportFile(event)">
   </div>
 </div>
 
@@ -244,6 +244,7 @@
 
 <script src="js/data.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.18.5/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
