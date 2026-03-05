@@ -9,6 +9,7 @@ let isDirty = false;     // 未保存変更フラグ
 let currentKoshu = [];     // 工種マスタ
 let currentSettings = null; // 設定マスタ
 let currentKeywords = [];  // キーワードマスタ
+let currentBunrui = { rows: [], keywords: [] }; // 分類マスタ（v3）
 let currentTab = 'material';
 
 // ===== INIT =====
@@ -70,6 +71,7 @@ function selectDb(id) {
   currentKoshu = loadKoshuData(id);
   currentSettings = loadSettingsData(id) || defaultSettings();
   currentKeywords = loadKeywordsData(id);
+  currentBunrui = loadBunruiData(id);
   isDirty = false;
 
   // 工種マスタからカテゴリを更新
@@ -82,6 +84,7 @@ function selectDb(id) {
   renderKoshuTable();
   renderSettingsPanel();
   renderKeywordTable();
+  renderBunruiPanel();
   updateCatFilterOptions();
 }
 
@@ -270,6 +273,7 @@ function autoSave() {
   saveKoshuData(currentDbId, currentKoshu);
   saveSettingsData(currentDbId, currentSettings);
   saveKeywordsData(currentDbId, currentKeywords);
+  saveBunruiData(currentDbId, currentBunrui);
   const db = dbList.find(d => d.id === currentDbId);
   if (db) {
     db.rowCount = currentRows.length;
@@ -442,6 +446,68 @@ function onKeywordChange(idx, field, value) {
   markDirty();
 }
 
+// ===== 分類マスタ表示 =====
+let _bunruiFiltered = [];
+
+function renderBunruiPanel() {
+  const rows = currentBunrui?.rows || [];
+  const kwCount = currentBunrui?.keywords?.length || 0;
+  const summary = document.getElementById('bunruiSummary');
+  const empty = document.getElementById('bunruiEmpty');
+  const table = document.getElementById('bunruiTable');
+
+  if (rows.length === 0) {
+    if (summary) summary.textContent = '';
+    if (empty) empty.style.display = 'block';
+    if (table) table.style.display = 'none';
+    return;
+  }
+
+  // サマリー
+  const daiSet = new Set(rows.map(r => r.daiId));
+  const chuSet = new Set(rows.map(r => r.chuId));
+  if (summary) summary.textContent = `大分類: ${daiSet.size}件 / 中分類: ${chuSet.size}件 / 小分類: ${rows.length}件 / キーワード: ${kwCount}件`;
+  if (empty) empty.style.display = 'none';
+  if (table) table.style.display = '';
+
+  _bunruiFiltered = rows;
+  renderBunruiTable(_bunruiFiltered);
+}
+
+function filterBunrui() {
+  const q = norm(document.getElementById('bunruiSearch').value).trim();
+  const rows = currentBunrui?.rows || [];
+  if (!q) {
+    _bunruiFiltered = rows;
+  } else {
+    _bunruiFiltered = rows.filter(r =>
+      norm(r.chuName).includes(q) || norm(r.shoName).includes(q) ||
+      norm(r.daiName).includes(q)
+    );
+  }
+  renderBunruiTable(_bunruiFiltered);
+}
+
+function renderBunruiTable(rows) {
+  const tbody = document.getElementById('bunruiBody');
+  if (!tbody) return;
+  const display = rows.slice(0, 200); // 最大200件表示
+  tbody.innerHTML = display.map(r => `
+    <tr>
+      <td style="font-size:11px;color:var(--text-sub);">${esc(r.daiId)}</td>
+      <td style="font-size:11px;">${esc(r.daiName)}</td>
+      <td style="font-size:11px;color:var(--text-sub);">${esc(r.chuId)}</td>
+      <td style="font-size:11px;">${esc(r.chuName)}</td>
+      <td style="font-size:11px;color:var(--text-sub);">${esc(r.shoId)}</td>
+      <td style="font-size:11px;">${esc(r.shoName)}</td>
+      <td style="font-size:11px;text-align:right;">${r.count || 0}</td>
+    </tr>
+  `).join('');
+  if (rows.length > 200) {
+    tbody.innerHTML += `<tr><td colspan="7" style="text-align:center;color:var(--text-sub);font-size:11px;">...他 ${rows.length - 200}件（検索で絞り込んでください）</td></tr>`;
+  }
+}
+
 // ===== CREATE DB MODAL =====
 function showCreateModal() {
   document.getElementById('newDbName').value = '';
@@ -466,6 +532,7 @@ function confirmCreateDb() {
   saveKoshuData(id, []);
   saveSettingsData(id, defaultSettings());
   saveKeywordsData(id, []);
+  saveBunruiData(id, { rows: [], keywords: [] });
   closeCreateModal();
   selectDb(id);
   showToast(`「${name}」を作成しました`);
@@ -536,6 +603,7 @@ function confirmDeleteDb() {
     currentKoshu = [];
     currentSettings = defaultSettings();
     currentKeywords = [];
+    currentBunrui = { rows: [], keywords: [] };
     isDirty = false;
     CATEGORIES = [...DEFAULT_CATEGORIES];
     rebuildCatMap();
@@ -547,6 +615,7 @@ function confirmDeleteDb() {
     renderKoshuTable();
     renderSettingsPanel();
     renderKeywordTable();
+    renderBunruiPanel();
   }
   renderSidebar();
   showToast('トリッジを削除しました');
@@ -562,7 +631,7 @@ function exportCurrentDb() {
 
   const wb = XLSX.utils.book_new();
 
-  // === Sheet 1: 資材マスタ ===
+  // === Sheet 1: 資材マスタ（v3.0: 13列）===
   const sheetRows = [EXCEL_HEADERS];
   rows.forEach(r => {
     sheetRows.push([
@@ -575,11 +644,16 @@ function exportCurrentDb() {
       r.b  !== '' ? parseFloat(r.b)  || 0 : '',
       CAT_MAP[r.c] || r.c || '',
       r.c || '',
+      r.daiId || '',
+      r.chuId || '',
+      r.shoId || '',
+      r.shoName || '',
     ]);
   });
   const ws1 = XLSX.utils.aoa_to_sheet(sheetRows);
   ws1['!cols'] = [
-    {wch:30},{wch:28},{wch:6},{wch:10},{wch:10},{wch:7},{wch:7},{wch:16},{wch:12}
+    {wch:30},{wch:28},{wch:6},{wch:10},{wch:10},{wch:7},{wch:7},{wch:16},{wch:12},
+    {wch:8},{wch:8},{wch:8},{wch:24}
   ];
   XLSX.utils.book_append_sheet(wb, ws1, '資材マスタ');
 
@@ -642,9 +716,39 @@ function exportCurrentDb() {
   ws5['!cols'] = [{wch:12},{wch:20},{wch:20}];
   XLSX.utils.book_append_sheet(wb, ws5, '労務単価マスタ');
 
+  // === Sheet 6: 分類マスタ ===
+  const bunrui = loadBunruiData(currentDbId);
+  if (bunrui.rows.length > 0) {
+    const bunruiHeaders = ['大分類ID','大分類名','中分類ID','中分類名','小分類ID','小分類名','品目数'];
+    const bunruiRows = [bunruiHeaders];
+    bunrui.rows.forEach(r => {
+      bunruiRows.push([r.daiId||'', r.daiName||'', r.chuId||'', r.chuName||'', r.shoId||'', r.shoName||'', r.count||0]);
+    });
+    const ws6 = XLSX.utils.aoa_to_sheet(bunruiRows);
+    ws6['!cols'] = [{wch:8},{wch:14},{wch:8},{wch:24},{wch:8},{wch:32},{wch:6}];
+    XLSX.utils.book_append_sheet(wb, ws6, '分類マスタ');
+
+    // キーワードマスタ(v3)も出力
+    if (bunrui.keywords.length > 0) {
+      // v3キーワードを上書きエクスポート（既存ws4を置き換え）
+      const kwV3Headers = ['キーワードID','キーワード','種別','大分類ID','大分類名','中分類ID','中分類名','小分類ID'];
+      const kwV3Rows = [kwV3Headers];
+      bunrui.keywords.forEach(k => {
+        kwV3Rows.push([k.kwId||'', k.keyword||'', k.type||'', k.daiId||'', k.daiName||'', k.chuId||'', k.chuName||'', k.shoId||'']);
+      });
+      // キーワードマスタシートをv3で上書き
+      wb.SheetNames = wb.SheetNames.filter(n => n !== 'キーワードマスタ');
+      delete wb.Sheets['キーワードマスタ'];
+      const wsKwV3 = XLSX.utils.aoa_to_sheet(kwV3Rows);
+      wsKwV3['!cols'] = [{wch:8},{wch:32},{wch:8},{wch:8},{wch:14},{wch:8},{wch:24},{wch:8}];
+      XLSX.utils.book_append_sheet(wb, wsKwV3, 'キーワードマスタ');
+    }
+  }
+
   const filename = (db ? db.name : 'Tridge') + '.xlsx';
   XLSX.writeFile(wb, filename);
-  showToast(`「${filename}」をエクスポートしました（${rows.length}品目 / ${koshu.length}工種）`);
+  const bunruiInfo = bunrui.rows.length > 0 ? ` / 分類${bunrui.rows.length}件` : '';
+  showToast(`「${filename}」をエクスポートしました（${rows.length}品目 / ${koshu.length}工種${bunruiInfo}）`);
 }
 
 // ===== EXCEL IMPORT (新規トリッジとして取り込み) =====
@@ -695,6 +799,10 @@ function handleImportFile(event) {
         const buk     = parseFloat(getCol(row, '歩掛1','歩掛','人工','取付人工') || 0);
         const chuName = String(getCol(row, '中分類名','分類名','分類') || '').trim();
         const catRaw  = String(getCol(row, 'カテゴリ') || '').trim();
+        const daiId   = String(getCol(row, '大分類ID') || '').trim();
+        const chuId   = String(getCol(row, '中分類ID') || '').trim();
+        const shoId   = String(getCol(row, '小分類ID') || '').trim();
+        const shoName = String(getCol(row, '小分類名') || '').trim();
 
         let cat = catRaw || detectCategory(hinmei, kikaku, chuName);
 
@@ -703,6 +811,7 @@ function handleImportFile(event) {
           n: hinmei, s: kikaku, u: unit,
           ep: ep || '', cp: cp || '', r: r || '',
           b: buk || '', c: cat,
+          daiId, chuId, shoId, shoName,
         });
       }
 
@@ -749,20 +858,57 @@ function handleImportFile(event) {
         console.log('[Import] 設定マスタ:', importedSettings);
       }
 
-      // === キーワードマスタ読み込み ===
+      // === キーワードマスタ読み込み（v2: 5列 or v3: 8列を自動判定）===
       let importedKeywords = [];
+      let importedBunruiKeywords = [];
       const wsKw = wb.Sheets['キーワードマスタ'];
       if (wsKw) {
         const dataKw = XLSX.utils.sheet_to_json(wsKw);
         const yn = v => ['true','1','yes','○','はい'].includes(String(v || '').trim());
-        importedKeywords = dataKw.map(r => ({
-          keyword:       String(getCol(r, 'キーワード') || '').trim(),
-          laborType:     String(getCol(r, '分類', '労務分類') || 'fixture').trim(),
-          bukariki:      parseFloat(getCol(r, '歩掛', '歩掛値') || 0),
-          copperLinked:  yn(getCol(r, '銅連動', '銅連動フラグ')),
-          ceilingOpening: yn(getCol(r, '天井開口', '天井開口フラグ')),
-        })).filter(k => k.keyword);
-        console.log('[Import] キーワードマスタ:', importedKeywords.length, '件');
+        // v3判定: キーワードID列が存在する場合
+        const isV3 = dataKw.length > 0 && getCol(dataKw[0], 'キーワードID') !== undefined;
+        if (isV3) {
+          // v3形式: 分類マスタ連動キーワード → bunruiに格納
+          importedBunruiKeywords = dataKw.map(r => ({
+            kwId:    String(getCol(r, 'キーワードID') || '').trim(),
+            keyword: String(getCol(r, 'キーワード') || '').trim(),
+            type:    String(getCol(r, '種別') || '').trim(),
+            daiId:   String(getCol(r, '大分類ID') || '').trim(),
+            daiName: String(getCol(r, '大分類名') || '').trim(),
+            chuId:   String(getCol(r, '中分類ID') || '').trim(),
+            chuName: String(getCol(r, '中分類名') || '').trim(),
+            shoId:   String(getCol(r, '小分類ID') || '').trim(),
+          })).filter(k => k.keyword);
+          console.log('[Import] キーワードマスタ(v3):', importedBunruiKeywords.length, '件');
+        } else {
+          // v2形式: 労務費計算用キーワード
+          importedKeywords = dataKw.map(r => ({
+            keyword:       String(getCol(r, 'キーワード') || '').trim(),
+            laborType:     String(getCol(r, '分類', '労務分類') || 'fixture').trim(),
+            bukariki:      parseFloat(getCol(r, '歩掛', '歩掛値') || 0),
+            copperLinked:  yn(getCol(r, '銅連動', '銅連動フラグ')),
+            ceilingOpening: yn(getCol(r, '天井開口', '天井開口フラグ')),
+          })).filter(k => k.keyword);
+          console.log('[Import] キーワードマスタ(v2):', importedKeywords.length, '件');
+        }
+      }
+
+      // === 分類マスタ読み込み ===
+      let importedBunrui = { rows: [], keywords: importedBunruiKeywords };
+      const wsBunrui = wb.Sheets['分類マスタ'];
+      if (wsBunrui) {
+        const dataBunrui = XLSX.utils.sheet_to_json(wsBunrui);
+        importedBunrui.rows = dataBunrui.map(r => ({
+          daiId:   String(getCol(r, '大分類ID') || '').trim(),
+          daiName: String(getCol(r, '大分類名') || '').trim(),
+          chuId:   String(getCol(r, '中分類ID') || '').trim(),
+          chuName: String(getCol(r, '中分類名') || '').trim(),
+          shoId:   String(getCol(r, '小分類ID') || '').trim(),
+          shoName: String(getCol(r, '小分類名') || '').trim(),
+          count:   parseInt(getCol(r, '品目数') || 0),
+        })).filter(r => r.shoId);
+        importedBunrui.keywords = importedBunruiKeywords;
+        console.log('[Import] 分類マスタ:', importedBunrui.rows.length, '件');
       }
 
       // === トリッジとして保存 ===
@@ -775,12 +921,14 @@ function handleImportFile(event) {
       saveKoshuData(id, importedKoshu);
       saveSettingsData(id, importedSettings);
       saveKeywordsData(id, importedKeywords);
+      saveBunruiData(id, importedBunrui);
 
       selectDb(id);
 
       const parts = [`${rows.length}品目`];
       if (importedKoshu.length > 0) parts.push(`${importedKoshu.length}工種`);
       if (importedKeywords.length > 0) parts.push(`${importedKeywords.length}キーワード`);
+      if (importedBunrui.rows.length > 0) parts.push(`分類${importedBunrui.rows.length}件`);
       showToast(`「${dbName}」をインポートしました（${parts.join(' / ')}、${skipped}件スキップ）`);
 
     } catch(err) {

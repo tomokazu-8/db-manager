@@ -54,6 +54,7 @@
     <button class="tab-btn" data-tab="koshu" onclick="switchTab('koshu')">工種マスタ</button>
     <button class="tab-btn" data-tab="settings" onclick="switchTab('settings')">設定マスタ</button>
     <button class="tab-btn" data-tab="keywords" onclick="switchTab('keywords')">キーワードマスタ</button>
+    <button class="tab-btn" data-tab="bunrui" onclick="switchTab('bunrui')">分類マスタ</button>
   </div>
 
   <!-- Tab: 資材マスタ -->
@@ -159,6 +160,33 @@
         <tbody id="keywordBody"></tbody>
       </table>
       <div id="keywordEmpty" class="master-empty">キーワードが登録されていません。「＋ キーワード追加」から追加してください。</div>
+    </div>
+  </div>
+
+  <!-- Tab: 分類マスタ -->
+  <div id="tab-bunrui" class="tab-content">
+    <div class="master-panel">
+      <div class="master-toolbar" style="justify-content:space-between;align-items:center;">
+        <span id="bunruiSummary" style="font-size:12px;color:var(--text-sub);"></span>
+        <input id="bunruiSearch" type="text" placeholder="中分類・小分類で絞込..."
+          oninput="filterBunrui()"
+          style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;width:240px;">
+      </div>
+      <table class="master-table" id="bunruiTable">
+        <thead>
+          <tr>
+            <th style="width:60px;">大分類ID</th>
+            <th style="width:120px;">大分類名</th>
+            <th style="width:70px;">中分類ID</th>
+            <th style="width:180px;">中分類名</th>
+            <th style="width:70px;">小分類ID</th>
+            <th style="width:240px;">小分類名</th>
+            <th style="width:60px;">品目数</th>
+          </tr>
+        </thead>
+        <tbody id="bunruiBody"></tbody>
+      </table>
+      <div id="bunruiEmpty" class="master-empty">分類マスタが読み込まれていません。トリッジをインポートすると自動登録されます。</div>
     </div>
   </div>
 
